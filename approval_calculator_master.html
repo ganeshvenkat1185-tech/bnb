@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ganesh Venkat — Chennai Region Approval Calculator (Master)</title>
+<style>
+  body{font-family:Inter,Arial,sans-serif;background:#0b0b0b;color:#f5f0e8;margin:0}
+  .wrap{max-width:1150px;margin:0 auto;padding:24px}
+  .card{background:#171717;border:1px solid #2b2b2b;border-radius:10px;padding:18px;margin:14px 0}
+  h1,h2{margin:0 0 12px}
+  h1{font-size:30px} h2{font-size:22px;color:#e8622e}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  label{font-size:12px;color:#c9c1b4;display:block;margin-bottom:6px}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid #3a3a3a;background:#111;color:#f5f0e8}
+  button{background:#c84b1f;color:white;border:none;padding:12px 16px;border-radius:8px;cursor:pointer;font-weight:700}
+  .muted{color:#b2a897;font-size:13px}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px;border-bottom:1px solid #2b2b2b;text-align:left}
+  .ok{color:#57c96b}.warn{color:#ffca56}
+  .pill{display:inline-block;padding:4px 8px;background:#2a211c;border:1px solid #5b341f;border-radius:999px;font-size:12px;color:#f2ba88}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ganesh Venkat Technical Consultant — Sales · Chennai</h1>
+  <div class="muted">ganesh.venkat@bricknbolt.com · +91 99720 50593</div>
+
+  <div class="card">
+    <h2>Approval Calculator (CMDA / DTCP / Panchayat)</h2>
+    <div class="grid">
+      <div><label>Pincode</label><input id="pin" maxlength="6" placeholder="600028" /></div>
+      <div><label>Plot Area (sq ft)</label><input id="area" type="number" value="2400" /></div>
+      <div><label>Building Type</label>
+        <select id="type"><option value="residential">Residential</option><option value="villa">Villa</option><option value="apartment">Apartment</option><option value="commercial">Commercial</option><option value="mixed">Mixed Use</option></select>
+      </div>
+      <div><label>Floors</label>
+        <select id="floors"><option>G</option><option selected>G+1</option><option>G+2</option><option>G+3</option><option>G+4</option></select>
+      </div>
+    </div>
+    <p id="auth" class="pill">Enter pincode to detect authority.</p>
+    <div><button onclick="runCalc()">Calculate Approval Cost</button></div>
+  </div>
+
+  <div id="result" class="card" style="display:none"></div>
+
+  <div class="card">
+    <h2>District-Wise Pincode Master (Requested Coverage)</h2>
+    <p class="muted">Source baseline used: pincode matrix embedded in this master calculator + requested region mapping (Chennai, Kancheepuram, Thiruvallur, Chengalpattu and nearby). Validate with latest local authority circulars before filing.</p>
+    <div id="pinlists" class="grid"></div>
+  </div>
+
+  <div class="card">
+    <h2>Execution Prompt for Claude (Copy/Paste)</h2>
+    <textarea id="prompt" style="min-height:260px"></textarea>
+  </div>
+</div>
+
+<script>
+const DB={
+  '600001':['Parrys Corner','CMDA Urban','Chennai'],'600028':['Shenoy Nagar','CMDA Urban','Chennai'],'600043':['Velachery','CMDA Sub-Urban','Chennai'],'600081':['Sholinganallur','CMDA Sub-Urban','Chennai'],'600090':['Poonamallee','CMDA Sub-Urban','Thiruvallur'],'600102':['Avadi','CMDA Sub-Urban','Thiruvallur'],'600108':['Madavaram','CMDA Sub-Urban','Thiruvallur'],'600117':['Pallikaranai','CMDA Sub-Urban','Chennai'],'600122':['Kelambakkam','DTCP','Chengalpattu'],'600127':['Kanathur','DTCP','Chengalpattu'],
+  '602001':['Tiruvallur','DTCP','Thiruvallur'],'602003':['Gummidipoondi','DTCP','Thiruvallur'],'602005':['Minjur','DTCP','Thiruvallur'],'602013':['Sholavaram','DTCP','Thiruvallur'],'602023':['Uthukottai','Panchayat','Thiruvallur'],
+  '603001':['Chengalpattu','DTCP','Chengalpattu'],'603102':['Mahabalipuram','DTCP','Chengalpattu'],'603106':['Kattankulathur','DTCP','Chengalpattu'],'603201':['Sriperumbudur','DTCP','Kancheepuram'],'603210':['Oragadam','DTCP','Kancheepuram'],
+  '632001':['Kancheepuram','Panchayat','Kancheepuram'],'632004':['Uthiramerur','Panchayat','Kancheepuram']
+};
+
+const DISTRICTS=['Chennai','Kancheepuram','Thiruvallur','Chengalpattu'];
+
+function getRate(authority){
+  if(authority.includes('CMDA Urban'))return [18,25,2.5,15];
+  if(authority.includes('CMDA Sub-Urban'))return [12,18,2,10];
+  if(authority==='DTCP')return [8,12,1.5,5];
+  return [5,8,1,2];
+}
+function runCalc(){
+  const pin=document.getElementById('pin').value.trim();
+  const area=+document.getElementById('area').value||0;
+  const type=document.getElementById('type').value;
+  const floors=document.getElementById('floors').value;
+  const x=DB[pin];
+  const authEl=document.getElementById('auth');
+  if(!x){authEl.innerHTML='<span class="warn">Invalid / unsupported pincode for this master list.</span>';return}
+  const [loc,auth,district]=x;
+  authEl.innerHTML=`<span class='ok'>Authority:</span> ${auth} · ${loc} (${district})`;
+  const floorCount=floors==='G'?1:Number(floors.split('+')[1])+1;
+  const mult={residential:1,villa:1.3,apartment:1.5,commercial:2,mixed:1.7}[type]||1;
+  const [plotRate,bldRate,scrRate,betRate]=getRate(auth);
+  const plot=Math.round(area*plotRate*mult), bld=Math.round(area*bldRate*mult*floorCount), scr=Math.max(500,Math.round(area*scrRate));
+  const better=Math.round(area*betRate), str=Math.round(area*8*floorCount), cc=Math.round(area*5), cess=Math.round((plot+bld)*0.01), arch=Math.round((plot+bld)*0.08), se=Math.round(area*12*floorCount);
+  const sub=plot+bld+scr+better+str+cc+cess+arch+se,gst=Math.round(sub*0.18),total=sub+gst;
+  document.getElementById('result').style.display='block';
+  document.getElementById('result').innerHTML=`
+    <h2>Cost Breakdown</h2>
+    <table><tbody>
+      <tr><td>Plot Approval</td><td>₹${plot.toLocaleString('en-IN')}</td></tr>
+      <tr><td>Building Approval</td><td>₹${bld.toLocaleString('en-IN')}</td></tr>
+      <tr><td>Scrutiny Fee</td><td>₹${scr.toLocaleString('en-IN')}</td></tr>
+      <tr><td>Betterment Charge</td><td>₹${better.toLocaleString('en-IN')}</td></tr>
+      <tr><td>Structural Review + Engineer</td><td>₹${(str+se).toLocaleString('en-IN')}</td></tr>
+      <tr><td>Completion + Cess + Architect</td><td>₹${(cc+cess+arch).toLocaleString('en-IN')}</td></tr>
+      <tr><th>TOTAL (incl GST)</th><th>₹${total.toLocaleString('en-IN')}</th></tr>
+    </tbody></table>`;
+}
+
+(function init(){
+  const listWrap=document.getElementById('pinlists');
+  DISTRICTS.forEach(d=>{
+    const pins=Object.entries(DB).filter(([,v])=>v[2]===d).map(([k,v])=>`${k} (${v[0]})`).join(', ');
+    const card=document.createElement('div');
+    card.className='card';
+    card.innerHTML=`<h3>${d}</h3><div class='muted'>${pins||'—'}</div>`;
+    listWrap.appendChild(card);
+  });
+  const nearby=Object.entries(DB).map(([k,v])=>`${k}:${v[0]}`).join('; ');
+  document.getElementById('prompt').value=`You are implementing Ganesh Venkat's branded approval calculator. Use these rules: 1) Detect authority by pincode. 2) Calculate full fee breakup with GST. 3) Output timeline + documents checklist by authority. 4) Include district pincode mapping for Chennai, Kancheepuram, Thiruvallur, Chengalpattu, and nearby areas. Pincode base: ${nearby}`;
+})();
+</script>
+</body>
+</html>
